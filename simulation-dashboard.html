@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Guardian — Data Pipeline (Milestone 1 Simulation)</title>
+  <title>Guardian — Data Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <style>
     :root {
       --bg: #0f1419;
@@ -16,6 +18,10 @@
       --good: #34c759;
       --warn: #ff9f0a;
       --bad: #ff453a;
+      --purple: #bf5af2;
+      --teal: #64d2ff;
+      --pink: #ff6482;
+      --orange: #ff9f43;
       --font: "DM Sans", system-ui, sans-serif;
       --mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
     }
@@ -30,7 +36,7 @@
       line-height: 1.5;
     }
     .wrap {
-      max-width: 1100px;
+      max-width: 1200px;
       margin: 0 auto;
       padding: 2rem 1.25rem 3rem;
     }
@@ -50,6 +56,20 @@
       color: var(--muted);
       font-size: 0.9rem;
     }
+    .fb-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-top: 0.5rem;
+      font-size: 0.8rem;
+      font-family: var(--mono);
+    }
+    .fb-status .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--bad);
+    }
+    .fb-status.connected .dot { background: var(--good); }
     .grid {
       display: grid;
       gap: 1rem;
@@ -57,6 +77,7 @@
     }
     @media (min-width: 720px) {
       .grid-top { grid-template-columns: 1fr 1.4fr; }
+      .grid-2col { grid-template-columns: 1fr 1fr; }
     }
     .panel {
       background: var(--surface);
@@ -123,9 +144,26 @@
       font-family: var(--mono);
       font-size: 0.85rem;
     }
+    .mode-toggle {
+      display: flex;
+      gap: 0;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .mode-toggle button {
+      border: none;
+      border-radius: 0;
+      padding: 0.45rem 0.85rem;
+      font-size: 0.8rem;
+    }
+    .mode-toggle button.active {
+      background: var(--accent);
+      color: #fff;
+    }
     .metrics {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
       gap: 0.75rem;
     }
     .metric {
@@ -150,11 +188,14 @@
     .metric.good .val { color: var(--good); }
     .metric.warn .val { color: var(--warn); }
     .metric.bad .val { color: var(--bad); }
+    .metric.accent .val { color: var(--accent); }
+    .metric.purple .val { color: var(--purple); }
     .chart-box {
       position: relative;
-      height: 280px;
+      height: 250px;
       margin-top: 0.5rem;
     }
+    .chart-box.tall { height: 300px; }
     .status-bar {
       display: flex;
       flex-wrap: wrap;
@@ -165,6 +206,42 @@
       font-family: var(--mono);
     }
     .status-bar strong { color: var(--text); font-weight: 500; }
+    .imu-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .imu-cell {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      text-align: center;
+    }
+    .imu-cell .axis {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.15rem;
+    }
+    .imu-cell .reading {
+      font-family: var(--mono);
+      font-size: 1rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .imu-section-label {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.75rem;
+      margin-bottom: 0.35rem;
+      font-weight: 500;
+    }
+    .imu-section-label:first-child { margin-top: 0; }
     pre.payload {
       margin: 0;
       margin-top: 0.75rem;
@@ -175,15 +252,16 @@
       font-family: var(--mono);
       font-size: 0.72rem;
       overflow-x: auto;
-      max-height: 160px;
+      max-height: 200px;
       white-space: pre-wrap;
       word-break: break-word;
     }
     .footnote {
-      margin-top: 1.5rem;
+      margin-top: 1rem;
       font-size: 0.8rem;
       color: var(--muted);
     }
+    .section-gap { margin-top: 1rem; }
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -192,14 +270,25 @@
 <body>
   <div class="wrap">
     <header>
-      <h1>Guardian — Data Pipeline Prototype</h1>
-      <p>Milestone 1: simulated ESP32 JSON → dashboard (no backend). Replace the <code style="color:var(--accent)">ingestPayload</code> hook with Firebase/AWS later.</p>
+      <h1>Guardian — Data Dashboard</h1>
+      <p>ESP32 sensor data (IMU + flex sensor) piped through Firebase Firestore in real time.</p>
+      <div class="fb-status" id="fbStatus">
+        <span class="dot"></span>
+        <span id="fbStatusText">Firestore: not connected</span>
+      </div>
     </header>
 
+    <!-- Row 1: Controls + Live Metrics -->
     <div class="grid grid-top">
       <div class="panel">
-        <h2>Simulation</h2>
+        <h2>Simulation Controls</h2>
         <div class="controls">
+          <div class="mode-toggle">
+            <button type="button" id="btnModeFirebase" class="active">Firebase</button>
+            <button type="button" id="btnModeLocal">Local only</button>
+          </div>
+        </div>
+        <div class="controls" style="margin-top:0.75rem">
           <button type="button" class="primary" id="btnRun">Run 20-rep session</button>
           <button type="button" id="btnReset">Reset</button>
         </div>
@@ -209,13 +298,14 @@
             <input type="number" id="maxLatency" value="5000" min="500" max="10000" step="100" />
           </label>
         </div>
-        <p class="footnote" style="margin-top:1rem">
-          Each rep sends one payload with <code>angle_series</code> (simulated joint angle). Random delay 0–max ms mimics WiFi + cloud before the dashboard updates.
+        <p class="footnote">
+          <strong>Firebase:</strong> writes to Firestore, reads back via <code style="color:var(--accent)">onSnapshot</code>.<br/>
+          <strong>Local:</strong> simulated delay, no network.
         </p>
       </div>
 
       <div class="panel">
-        <h2>Live metrics</h2>
+        <h2>Live Metrics</h2>
         <div class="metrics">
           <div class="metric" id="mReps">
             <div class="val" id="vReps">0</div>
@@ -223,15 +313,23 @@
           </div>
           <div class="metric" id="mForm">
             <div class="val" id="vForm">—</div>
-            <div class="lbl">Latest form score</div>
+            <div class="lbl">Form score</div>
+          </div>
+          <div class="metric" id="mPeak">
+            <div class="val" id="vPeak">—</div>
+            <div class="lbl">Peak angle (°)</div>
+          </div>
+          <div class="metric" id="mFlex">
+            <div class="val" id="vFlex">—</div>
+            <div class="lbl">Flex sensor</div>
           </div>
           <div class="metric" id="mLat">
             <div class="val" id="vLat">—</div>
-            <div class="lbl">Last latency (ms)</div>
+            <div class="lbl">Latency (ms)</div>
           </div>
           <div class="metric good" id="mLoss">
             <div class="val" id="vLoss">0 / 0</div>
-            <div class="lbl">Data loss (lost / sent)</div>
+            <div class="lbl">Data loss</div>
           </div>
         </div>
         <div class="status-bar">
@@ -243,38 +341,179 @@
       </div>
     </div>
 
-    <div class="panel" style="margin-top:1rem">
-      <h2>Angle vs. time (last rep)</h2>
-      <div class="chart-box">
-        <canvas id="chartAngle" aria-label="Angle over time"></canvas>
+    <!-- Row 2: Angle chart + Flex chart -->
+    <div class="grid grid-2col section-gap">
+      <div class="panel">
+        <h2>Joint Angle — Last Rep (IMU)</h2>
+        <div class="chart-box">
+          <canvas id="chartAngle"></canvas>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Flex Sensor — Last Rep</h2>
+        <div class="chart-box">
+          <canvas id="chartFlex"></canvas>
+        </div>
       </div>
     </div>
 
-    <div class="panel" style="margin-top:1rem">
-      <h2>Last payload (JSON)</h2>
-      <pre class="payload" id="payloadView">—</pre>
+    <!-- Row 3: Form score trend + Rep comparison -->
+    <div class="grid grid-2col section-gap">
+      <div class="panel">
+        <h2>Form Score Trend (All Reps)</h2>
+        <div class="chart-box">
+          <canvas id="chartFormTrend"></canvas>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Rep-over-Rep Angle Comparison</h2>
+        <div class="chart-box">
+          <canvas id="chartRepCompare"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 4: IMU raw data + JSON payload -->
+    <div class="grid grid-2col section-gap">
+      <div class="panel">
+        <h2>IMU Raw Data (Last Sample)</h2>
+        <div class="imu-section-label">Accelerometer (m/s²)</div>
+        <div class="imu-grid">
+          <div class="imu-cell">
+            <div class="axis">X</div>
+            <div class="reading" id="imuAx" style="color:var(--bad)">—</div>
+          </div>
+          <div class="imu-cell">
+            <div class="axis">Y</div>
+            <div class="reading" id="imuAy" style="color:var(--good)">—</div>
+          </div>
+          <div class="imu-cell">
+            <div class="axis">Z</div>
+            <div class="reading" id="imuAz" style="color:var(--accent)">—</div>
+          </div>
+        </div>
+        <div class="imu-section-label">Gyroscope (°/s)</div>
+        <div class="imu-grid">
+          <div class="imu-cell">
+            <div class="axis">X</div>
+            <div class="reading" id="imuGx" style="color:var(--bad)">—</div>
+          </div>
+          <div class="imu-cell">
+            <div class="axis">Y</div>
+            <div class="reading" id="imuGy" style="color:var(--good)">—</div>
+          </div>
+          <div class="imu-cell">
+            <div class="axis">Z</div>
+            <div class="reading" id="imuGz" style="color:var(--accent)">—</div>
+          </div>
+        </div>
+        <div class="imu-section-label">Flex Sensor</div>
+        <div class="imu-grid" style="grid-template-columns: 1fr 1fr;">
+          <div class="imu-cell">
+            <div class="axis">Raw ADC</div>
+            <div class="reading" id="flexRaw" style="color:var(--purple)">—</div>
+          </div>
+          <div class="imu-cell">
+            <div class="axis">Bend (°)</div>
+            <div class="reading" id="flexDeg" style="color:var(--orange)">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Last Payload (JSON)</h2>
+        <pre class="payload" id="payloadView">—</pre>
+      </div>
     </div>
   </div>
 
   <script>
 (function () {
+  const firebaseConfig = {
+    apiKey:            "AIzaSyCBQLqCsbFDBAqSPViEGMkoQ7mPOoek4XI",
+    authDomain:        "guardian-dashboard-data.firebaseapp.com",
+    projectId:         "guardian-dashboard-data",
+    storageBucket:     "guardian-dashboard-data.firebasestorage.app",
+    messagingSenderId: "293456561970",
+    appId:             "1:293456561970:web:fdb8db38dc557eeea6f92b",
+    measurementId:     "G-TRHP2M5GJX",
+  };
+
   const TOTAL_REPS = 20;
   const SUCCESS_MS = 5000;
+  const PALETTE = [
+    "#3d9cf0","#34c759","#ff9f0a","#ff453a","#bf5af2",
+    "#64d2ff","#ff6482","#ff9f43","#30d158","#5e5ce6",
+    "#ffd60a","#ac8e68","#48dbfb","#ff6b6b","#a29bfe",
+    "#00d2d3","#f368e0","#10ac84","#ee5a24","#c8d6e5",
+  ];
+
+  let db = null;
+  let firebaseReady = false;
+  let useFirebase = true;
+  let unsubListener = null;
 
   let sessionId = null;
   let sentCount = 0;
   let receivedCount = 0;
   let latencies = [];
-  let chart = null;
   let running = false;
+  let repTimestamps = {};
+
+  let chartAngle = null;
+  let chartFlex = null;
+  let chartFormTrend = null;
+  let chartRepCompare = null;
+
+  let allReps = [];
 
   const $ = (id) => document.getElementById(id);
 
+  // ── Firebase ──
+  function initFirebase() {
+    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+      setFbStatus(false, "Firestore: config not set — using local mode");
+      useFirebase = false;
+      $("btnModeFirebase").classList.remove("active");
+      $("btnModeLocal").classList.add("active");
+      return;
+    }
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      firebaseReady = true;
+      setFbStatus(true, "Firestore: connected — " + firebaseConfig.projectId);
+    } catch (err) {
+      console.error("Firebase init failed:", err);
+      setFbStatus(false, "Firestore: init error — " + err.message);
+      useFirebase = false;
+      $("btnModeFirebase").classList.remove("active");
+      $("btnModeLocal").classList.add("active");
+    }
+  }
+
+  function setFbStatus(ok, text) {
+    $("fbStatus").classList.toggle("connected", ok);
+    $("fbStatusText").textContent = text;
+  }
+
+  $("btnModeFirebase").addEventListener("click", () => {
+    if (!firebaseReady) { alert("Firebase not configured."); return; }
+    useFirebase = true;
+    $("btnModeFirebase").classList.add("active");
+    $("btnModeLocal").classList.remove("active");
+  });
+  $("btnModeLocal").addEventListener("click", () => {
+    useFirebase = false;
+    $("btnModeLocal").classList.add("active");
+    $("btnModeFirebase").classList.remove("active");
+  });
+
+  // ── Simulation helpers ──
   function randomSessionId() {
     return "sess-" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
   }
 
-  /** Fake angle curve for one rep (elbow flex extension). */
   function makeAngleSeries(repIndex) {
     const n = 24;
     const phase = (repIndex * 0.4) % (Math.PI * 2);
@@ -288,32 +527,213 @@
     return out;
   }
 
+  function makeFlexSeries(angleSeries) {
+    return angleSeries.map((deg) => {
+      const normalized = deg / 180;
+      const raw = Math.round(200 + normalized * 600 + (Math.random() - 0.5) * 40);
+      return Math.min(1023, Math.max(0, raw));
+    });
+  }
+
+  function makeIMUSample(repIndex, sampleIdx) {
+    const t = sampleIdx * 0.05;
+    const swing = Math.sin(t * 3 + repIndex * 0.3);
+    return {
+      accel: {
+        x: Math.round((swing * 2.5 + (Math.random() - 0.5) * 0.4) * 100) / 100,
+        y: Math.round((-9.81 + (Math.random() - 0.5) * 0.3) * 100) / 100,
+        z: Math.round(((Math.random() - 0.5) * 1.2) * 100) / 100,
+      },
+      gyro: {
+        x: Math.round((swing * 45 + (Math.random() - 0.5) * 8) * 100) / 100,
+        y: Math.round(((Math.random() - 0.5) * 12) * 100) / 100,
+        z: Math.round(((Math.random() - 0.5) * 6) * 100) / 100,
+      },
+    };
+  }
+
+  function flexRawToDeg(raw) {
+    return Math.round(((raw - 200) / 600) * 90 * 10) / 10;
+  }
+
   function buildPayload(repIndex) {
     const angle_series = makeAngleSeries(repIndex);
+    const flex_series = makeFlexSeries(angle_series);
     const peak = Math.max(...angle_series);
     const form_score = Math.min(1, 0.65 + (180 - Math.abs(peak - 90)) / 400 + Math.random() * 0.12);
+    const imu = makeIMUSample(repIndex, angle_series.length - 1);
+    const flex_raw = flex_series[flex_series.length - 1];
 
     return {
-      schema_version: 1,
+      schema_version: 2,
       device_id: "esp32-sim",
       session_id: sessionId,
       rep_index: repIndex,
       timestamp_ms: Date.now(),
       angle_peak_deg: peak,
       form_score: Math.round(form_score * 1000) / 1000,
-      angle_series: angle_series,
+      angle_series,
+      flex_series,
+      flex_raw,
+      flex_deg: flexRawToDeg(flex_raw),
+      imu_accel: imu.accel,
+      imu_gyro: imu.gyro,
     };
   }
 
-  function delay(ms) {
-    return new Promise((r) => setTimeout(r, ms));
-  }
+  function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
   function randomLatencyCap() {
     const cap = Math.min(10000, Math.max(500, parseInt($("maxLatency").value, 10) || 5000));
     return Math.floor(Math.random() * (cap + 1));
   }
 
+  // ── Chart: shared theme ──
+  const chartTheme = {
+    grid: { color: "rgba(45, 58, 77, 0.6)" },
+    ticks: { color: "#8b9cb3" },
+  };
+
+  // ── Chart: Angle (last rep) ──
+  function updateAngleChart(angleSeries) {
+    const labels = angleSeries.map((_, i) => i);
+    if (chartAngle) chartAngle.destroy();
+    chartAngle = new Chart($("chartAngle"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Angle (°)",
+          data: angleSeries,
+          borderColor: "#3d9cf0",
+          backgroundColor: "rgba(61,156,240,0.1)",
+          fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { title: { display: true, text: "Sample", color: "#8b9cb3" }, ...chartTheme },
+          y: { min: 0, max: 180, title: { display: true, text: "Degrees", color: "#8b9cb3" }, ...chartTheme },
+        },
+      },
+    });
+  }
+
+  // ── Chart: Flex sensor (last rep) ──
+  function updateFlexChart(flexSeries) {
+    const labels = flexSeries.map((_, i) => i);
+    if (chartFlex) chartFlex.destroy();
+    chartFlex = new Chart($("chartFlex"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Flex (ADC)",
+          data: flexSeries,
+          borderColor: "#bf5af2",
+          backgroundColor: "rgba(191,90,242,0.1)",
+          fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { title: { display: true, text: "Sample", color: "#8b9cb3" }, ...chartTheme },
+          y: { min: 0, max: 1023, title: { display: true, text: "ADC (0–1023)", color: "#8b9cb3" }, ...chartTheme },
+        },
+      },
+    });
+  }
+
+  // ── Chart: Form score trend ──
+  function updateFormTrendChart() {
+    const labels = allReps.map((r) => "Rep " + r.rep_index);
+    const scores = allReps.map((r) => Math.round(r.form_score * 100));
+    const colors = scores.map((s) => s >= 85 ? "#34c759" : s >= 70 ? "#ff9f0a" : "#ff453a");
+
+    if (chartFormTrend) chartFormTrend.destroy();
+    chartFormTrend = new Chart($("chartFormTrend"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          label: "Form %",
+          data: scores,
+          backgroundColor: colors.map((c) => c + "cc"),
+          borderColor: colors,
+          borderWidth: 1,
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => ctx.parsed.y + "%" } },
+        },
+        scales: {
+          x: { ...chartTheme },
+          y: { min: 0, max: 100, title: { display: true, text: "Score %", color: "#8b9cb3" }, ...chartTheme },
+        },
+      },
+    });
+  }
+
+  // ── Chart: Rep comparison (overlay last 5 reps) ──
+  function updateRepCompareChart() {
+    const recent = allReps.slice(-5);
+    const maxLen = Math.max(...recent.map((r) => r.angle_series.length));
+    const labels = Array.from({ length: maxLen }, (_, i) => i);
+
+    const datasets = recent.map((r, idx) => ({
+      label: "Rep " + r.rep_index,
+      data: r.angle_series,
+      borderColor: PALETTE[r.rep_index % PALETTE.length],
+      borderWidth: 1.5,
+      tension: 0.3,
+      pointRadius: 0,
+      fill: false,
+    }));
+
+    if (chartRepCompare) chartRepCompare.destroy();
+    chartRepCompare = new Chart($("chartRepCompare"), {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: "top",
+            labels: { color: "#8b9cb3", boxWidth: 12, padding: 8, font: { size: 10 } },
+          },
+        },
+        scales: {
+          x: { title: { display: true, text: "Sample", color: "#8b9cb3" }, ...chartTheme },
+          y: { min: 0, max: 180, title: { display: true, text: "Degrees", color: "#8b9cb3" }, ...chartTheme },
+        },
+      },
+    });
+  }
+
+  // ── IMU display ──
+  function updateIMU(p) {
+    const a = p.imu_accel || { x: 0, y: 0, z: 0 };
+    const g = p.imu_gyro || { x: 0, y: 0, z: 0 };
+    $("imuAx").textContent = a.x.toFixed(2);
+    $("imuAy").textContent = a.y.toFixed(2);
+    $("imuAz").textContent = a.z.toFixed(2);
+    $("imuGx").textContent = g.x.toFixed(1);
+    $("imuGy").textContent = g.y.toFixed(1);
+    $("imuGz").textContent = g.z.toFixed(1);
+    $("flexRaw").textContent = p.flex_raw != null ? p.flex_raw : "—";
+    $("flexDeg").textContent = p.flex_deg != null ? p.flex_deg.toFixed(1) + "°" : "—";
+  }
+
+  // ── Metric updates ──
   function updateFormMetric(score) {
     const el = $("mForm");
     el.classList.remove("good", "warn", "bad");
@@ -321,64 +741,6 @@
     else if (score >= 0.7) el.classList.add("warn");
     else el.classList.add("bad");
     $("vForm").textContent = (score * 100).toFixed(0) + "%";
-  }
-
-  function updateChart(angleSeries) {
-    const labels = angleSeries.map((_, i) => i);
-    if (chart) chart.destroy();
-    chart = new Chart($("chartAngle"), {
-      type: "line",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "Angle (°)",
-            data: angleSeries,
-            borderColor: "#3d9cf0",
-            backgroundColor: "rgba(61, 156, 240, 0.12)",
-            fill: true,
-            tension: 0.35,
-            pointRadius: 0,
-            borderWidth: 2,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        plugins: {
-          legend: { display: false },
-        },
-        scales: {
-          x: {
-            title: { display: true, text: "Sample index", color: "#8b9cb3" },
-            grid: { color: "rgba(45, 58, 77, 0.6)" },
-            ticks: { color: "#8b9cb3", maxTicksLimit: 12 },
-          },
-          y: {
-            min: 0,
-            max: 180,
-            title: { display: true, text: "Degrees", color: "#8b9cb3" },
-            grid: { color: "rgba(45, 58, 77, 0.6)" },
-            ticks: { color: "#8b9cb3" },
-          },
-        },
-      },
-    });
-  }
-
-  /**
-   * Future: POST to cloud, then subscribe to Firestore.
-   * Milestone 1: resolves after simulated network delay with the same payload (zero loss).
-   */
-  function ingestPayload(payload, sendStartedAt) {
-    const networkDelay = randomLatencyCap();
-    return delay(networkDelay).then(() => {
-      const arrivedAt = Date.now();
-      const latency = arrivedAt - sendStartedAt;
-      return { payload, latency, arrivedAt };
-    });
   }
 
   function renderPayload(obj) {
@@ -393,10 +755,8 @@
 
     if (latencies.length) {
       const sum = latencies.reduce((a, b) => a + b, 0);
-      const avg = Math.round(sum / latencies.length);
-      const max = Math.max(...latencies);
-      $("vAvgLat").textContent = avg;
-      $("vMaxLat").textContent = max;
+      $("vAvgLat").textContent = Math.round(sum / latencies.length);
+      $("vMaxLat").textContent = Math.max(...latencies);
       const under = latencies.filter((l) => l < SUCCESS_MS).length;
       $("vSuccess").textContent = under + " / " + latencies.length + " under " + SUCCESS_MS + " ms";
     } else {
@@ -406,6 +766,57 @@
     }
   }
 
+  function handleRep(p, latency) {
+    receivedCount += 1;
+    latencies.push(latency);
+    allReps.push(p);
+
+    $("vReps").textContent = String(receivedCount);
+    $("vLat").textContent = String(latency);
+    $("vPeak").textContent = p.angle_peak_deg + "°";
+    $("vFlex").textContent = p.flex_raw != null ? p.flex_raw : "—";
+
+    updateFormMetric(p.form_score);
+    updateAngleChart(p.angle_series);
+    updateFlexChart(p.flex_series || []);
+    updateFormTrendChart();
+    updateRepCompareChart();
+    updateIMU(p);
+    renderPayload(p);
+    refreshStats();
+  }
+
+  // ── Firestore ──
+  async function writeToFirestore(payload) {
+    const docId = sessionId + "_rep" + payload.rep_index;
+    await db.collection("sessions").doc(sessionId)
+      .collection("reps").doc(docId).set(payload);
+  }
+
+  function listenToSession() {
+    if (unsubListener) unsubListener();
+    unsubListener = db.collection("sessions").doc(sessionId)
+      .collection("reps").orderBy("rep_index")
+      .onSnapshot((snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "added") {
+            const p = change.doc.data();
+            const sendTime = repTimestamps[p.rep_index];
+            const latency = sendTime ? Date.now() - sendTime : 0;
+            handleRep(p, latency);
+          }
+        });
+      }, (err) => {
+        console.error("Listener error:", err);
+        setFbStatus(false, "Firestore: listener error — " + err.message);
+      });
+  }
+
+  function ingestLocal(payload, t0) {
+    return delay(randomLatencyCap()).then(() => ({ payload, latency: Date.now() - t0 }));
+  }
+
+  // ── Session ──
   async function runSession() {
     if (running) return;
     running = true;
@@ -413,30 +824,38 @@
 
     sessionId = randomSessionId();
     $("vSession").textContent = sessionId;
-    sentCount = 0;
-    receivedCount = 0;
-    latencies = [];
+    sentCount = 0; receivedCount = 0;
+    latencies = []; repTimestamps = {}; allReps = [];
     $("vReps").textContent = "0";
-    $("vForm").textContent = "—";
+    $("vForm").textContent = "—"; $("vPeak").textContent = "—";
+    $("vFlex").textContent = "—"; $("vLat").textContent = "—";
     $("mForm").classList.remove("good", "warn", "bad");
-    $("vLat").textContent = "—";
     refreshStats();
 
-    for (let rep = 1; rep <= TOTAL_REPS; rep++) {
-      const payload = buildPayload(rep);
-      const sendStartedAt = Date.now();
-      sentCount += 1;
+    if (useFirebase && firebaseReady) {
+      await db.collection("sessions").doc(sessionId).set({
+        created_at: firebase.firestore.FieldValue.serverTimestamp(),
+        device_id: "esp32-sim",
+        total_reps: TOTAL_REPS,
+      });
+      listenToSession();
 
-      const { payload: p, latency } = await ingestPayload(payload, sendStartedAt);
-      receivedCount += 1;
-      latencies.push(latency);
-
-      $("vReps").textContent = String(receivedCount);
-      $("vLat").textContent = String(latency);
-      updateFormMetric(p.form_score);
-      updateChart(p.angle_series);
-      renderPayload(p);
-      refreshStats();
+      for (let rep = 1; rep <= TOTAL_REPS; rep++) {
+        const payload = buildPayload(rep);
+        repTimestamps[rep] = Date.now();
+        sentCount += 1;
+        refreshStats();
+        try { await writeToFirestore(payload); } catch (e) { console.error("Write fail:", e); }
+        await delay(150);
+      }
+    } else {
+      for (let rep = 1; rep <= TOTAL_REPS; rep++) {
+        const payload = buildPayload(rep);
+        const t0 = Date.now();
+        sentCount += 1;
+        const { payload: p, latency } = await ingestLocal(payload, t0);
+        handleRep(p, latency);
+      }
     }
 
     running = false;
@@ -445,25 +864,24 @@
 
   function reset() {
     if (running) return;
-    sessionId = null;
-    sentCount = 0;
-    receivedCount = 0;
-    latencies = [];
+    if (unsubListener) { unsubListener(); unsubListener = null; }
+    sessionId = null; sentCount = 0; receivedCount = 0;
+    latencies = []; repTimestamps = {}; allReps = [];
     $("vSession").textContent = "—";
     $("vReps").textContent = "0";
-    $("vForm").textContent = "—";
+    $("vForm").textContent = "—"; $("vPeak").textContent = "—";
+    $("vFlex").textContent = "—"; $("vLat").textContent = "—";
     $("mForm").classList.remove("good", "warn", "bad");
-    $("vLat").textContent = "—";
     $("payloadView").textContent = "—";
-    if (chart) {
-      chart.destroy();
-      chart = null;
-    }
+    ["imuAx","imuAy","imuAz","imuGx","imuGy","imuGz","flexRaw","flexDeg"].forEach((id) => $(id).textContent = "—");
+    [chartAngle, chartFlex, chartFormTrend, chartRepCompare].forEach((c) => { if (c) c.destroy(); });
+    chartAngle = chartFlex = chartFormTrend = chartRepCompare = null;
     refreshStats();
   }
 
   $("btnRun").addEventListener("click", runSession);
   $("btnReset").addEventListener("click", reset);
+  initFirebase();
 })();
   </script>
 </body>
