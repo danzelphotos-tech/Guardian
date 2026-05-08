@@ -1,86 +1,60 @@
 // --- Library Includes ---
 #include <Adafruit_ICM20X.h>      // Base library for ICM20X series IMUs
 #include <Adafruit_ICM20948.h>    // Specific library for the ICM20948 9-DoF IMU
-#include <Adafruit_Sensor.h>      // Unified sensor interface (standardizes how sensor data is returned)
-#include <Wire.h>                 // I2C communication protocol library (how ESP32 talks to the IMU)
+#include <Adafruit_Sensor.h>      // Unified sensor interface
+#include <Wire.h>                 // I2C communication protocol library
 
-// Create an ICM20948 sensor object to interact with the IMU
+// Create an ICM20948 sensor object
 Adafruit_ICM20948 icm;
 
-// Define which pin reads the flex sensor — D0 is an ADC-capable pin on the XIAO
-#define FLEX_PIN D0
+// Track time since program started (milliseconds)
+unsigned long startTime;
 
 void setup() {
-  // Start serial communication at 115200 baud so we can print data to the Serial Monitor
   Serial.begin(115200);
-
-  // Wait for serial connection to be ready (needed for some boards)
   while (!Serial) delay(10);
 
-  Serial.println("ICM20948 + Flex Sensor Test");
-
-  // Initialize I2C on specific pins — GPIO5 = SDA (data), GPIO6 = SCL (clock)
+  // Initialize I2C — GPIO5 = SDA (data), GPIO6 = SCL (clock)
   Wire.begin(5, 6);
 
-  // Try to connect to the ICM20948 over I2C. If it fails, halt the program
+  // Try to connect to the ICM20948 over I2C. Halt if it fails
   if (!icm.begin_I2C()) {
-    Serial.println("Failed to find ICM20948 chip!");
-    while (1) delay(10);  // Infinite loop — stops here so you know something is wrong
+    Serial.println("ERROR: Failed to find ICM20948 chip!");
+    while (1) delay(10);
   }
 
-  Serial.println("ICM20948 Found!");
+  // Configure sensor ranges
+  icm.setAccelRange(ICM20948_ACCEL_RANGE_4_G);      // Accelerometer: ±4g
+  icm.setGyroRange(ICM20948_GYRO_RANGE_500_DPS);    // Gyroscope: ±500 degrees/sec
+  icm.setMagDataRate(AK09916_MAG_DATARATE_10_HZ);   // Magnetometer: 10 readings/sec
 
-  // Configure sensor ranges:
-  icm.setAccelRange(ICM20948_ACCEL_RANGE_4_G);       // Accelerometer: ±4g (good for arm movement)
-  icm.setGyroRange(ICM20948_GYRO_RANGE_500_DPS);     // Gyroscope: ±500 degrees/sec
-  icm.setMagDataRate(AK09916_MAG_DATARATE_10_HZ);    // Magnetometer: 10 readings/sec
+  // Print CSV header row — becomes the first line of your file
+  Serial.println("timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z,temp_c");
 
-  Serial.println("Ready.\n");
+  startTime = millis();
 }
 
 void loop() {
-  // Create four event structs to hold the latest reading from each sensor
+  // Create event structs to hold latest readings
   sensors_event_t accel, gyro, mag, temp;
 
-  // Pull fresh data from all four sensors on the ICM20948 in one call
+  // Pull fresh data from all sensors in one call
   icm.getEvent(&accel, &gyro, &temp, &mag);
 
-  // Read the flex sensor — returns 0-4095 (12-bit ADC on ESP32-S3)
-  int flexRaw = analogRead(FLEX_PIN);
+  // Print one CSV row per reading — comma separated
+  unsigned long elapsed = millis() - startTime;
+  Serial.print(elapsed);                Serial.print(",");
+  Serial.print(accel.acceleration.x, 3); Serial.print(",");
+  Serial.print(accel.acceleration.y, 3); Serial.print(",");
+  Serial.print(accel.acceleration.z, 3); Serial.print(",");
+  Serial.print(gyro.gyro.x, 3);          Serial.print(",");
+  Serial.print(gyro.gyro.y, 3);          Serial.print(",");
+  Serial.print(gyro.gyro.z, 3);          Serial.print(",");
+  Serial.print(mag.magnetic.x, 3);       Serial.print(",");
+  Serial.print(mag.magnetic.y, 3);       Serial.print(",");
+  Serial.print(mag.magnetic.z, 3);       Serial.print(",");
+  Serial.println(temp.temperature, 1);
 
-  // Convert raw ADC value to voltage: 0 = 0V, 4095 = 3.3V
-  float flexVoltage = flexRaw * (3.3 / 4095.0);
-
-  // --- Print all sensor data to Serial Monitor ---
-
-  // Accelerometer: measures linear acceleration in m/s² (includes gravity)
-  Serial.print("Accel X: "); Serial.print(accel.acceleration.x, 3);
-  Serial.print(" Y: ");      Serial.print(accel.acceleration.y, 3);
-  Serial.print(" Z: ");      Serial.print(accel.acceleration.z, 3);
-  Serial.println(" m/s²");
-
-  // Gyroscope: measures rotational speed in radians/sec
-  Serial.print("Gyro  X: "); Serial.print(gyro.gyro.x, 3);
-  Serial.print(" Y: ");      Serial.print(gyro.gyro.y, 3);
-  Serial.print(" Z: ");      Serial.print(gyro.gyro.z, 3);
-  Serial.println(" rad/s");
-
-  // Magnetometer: measures magnetic field in microtesla (compass)
-  Serial.print("Mag   X: "); Serial.print(mag.magnetic.x, 3);
-  Serial.print(" Y: ");      Serial.print(mag.magnetic.y, 3);
-  Serial.print(" Z: ");      Serial.print(mag.magnetic.z, 3);
-  Serial.println(" uT");
-
-  // Temperature: internal chip temperature (not room temp)
-  Serial.print("Temp: ");    Serial.print(temp.temperature, 1);
-  Serial.println(" °C");
-
-  // Flex sensor: raw ADC value and converted voltage
-  // Higher raw value = more bend = tighter curl
-  Serial.print("Flex  Raw: "); Serial.print(flexRaw);
-  Serial.print("  Voltage: "); Serial.print(flexVoltage, 3);
-  Serial.println(" V\n");
-
-  // Wait 500ms before next reading (2 readings per second)
-  delay(500);
+  // 50ms = 20 readings per second
+  delay(50);
 }
