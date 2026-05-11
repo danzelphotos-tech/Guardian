@@ -1,92 +1,254 @@
-# Smart Workout Armband — Sensor Test
+# Smart Workout Armband
 
-TECHIN515 Group Final Project: a wearable armband that detects exercise form during strength training and provides real-time feedback.
+TECHIN515 Group Final Project — A wearable armband that detects bicep curl form in real time using an IMU sensor and a machine learning classifier. Each completed rep is classified as good or bad form, displayed on a live Streamlit dashboard.
+
+**Team:** January (HW/SW + ML), Veronika (HW/SW), Coleman (ML), Daniel (Cloud/Dashboard), Kitty (Systems/Integration)
+
+---
 
 ## Hardware
 
-- **Microcontroller:** Seeed XIAO ESP32-S3
-- **IMU:** Adafruit ICM20948 9-DoF (accelerometer, gyroscope, magnetometer, temperature)
-- **Flex Sensor:** Resistive flex sensor with 47kΩ pulldown resistor (voltage divider)
+| Component | Details |
+|-----------|---------|
+| Microcontroller | Seeed XIAO ESP32-S3 |
+| IMU | Adafruit ICM20948 9-DoF (accelerometer, gyroscope, magnetometer) |
+| Feedback | Haptic motor (in progress) |
+| Sensor placement | IMU worn on wrist |
 
-## Wiring
+### Wiring — ICM20948 to XIAO ESP32-S3
 
-### ICM20948 → XIAO ESP32-S3 (I2C)
+| IMU Pin | XIAO Pin |
+|---------|----------|
+| VIN | 3V3 |
+| GND | GND |
+| SDA | D4 (GPIO5) |
+| SCL | D5 (GPIO6) |
 
-| IMU Pin | XIAO Pin       |
-|---------|----------------|
-| VIN     | 3V3            |
-| GND     | GND            |
-| SDA     | D4 (GPIO5)     |
-| SCL     | D5 (GPIO6)     |
+---
 
-### Flex Sensor → XIAO ESP32-S3 (Voltage Divider)
+## Repository Structure
 
 ```
-3V3 ──── [Flex Sensor] ──┬──── [47kΩ Resistor] ──── GND
-                          │
-                       D0 (ADC)
+workout-armband/
+├── data/
+│   ├── good/                        # Good form CSV sessions
+│   └── bad/                         # Bad form CSV sessions
+├── arduino_sketch/
+│   └── imu_stream.ino               # Arduino firmware
+├── capture.py                       # Records sensor data to CSV
+├── train_rep_classifier.py          # Trains the ML model
+├── live_rep_predict_dashboard.py    # Live prediction backend
+├── dashboard.py                     # Streamlit dashboard
+├── rep_classifier.pkl               # Trained model (generated)
+├── session_log.json                 # Live session data (generated)
+└── README.md
 ```
 
-- Flex sensor pin 1 → 3V3
-- Flex sensor pin 2 → breadboard junction row
-- 47kΩ resistor leg 1 → same junction row
-- 47kΩ resistor leg 2 → GND
-- D0 wire → same junction row
+---
 
-## Sensor Placement
+## Installation
 
-- **IMU** — worn on the wrist (captures full arc of motion during reps)
-- **Flex sensor** — placed on the inside of the elbow (measures joint angle)
+### 1. Arduino IDE setup
 
-## Setup
-
-### 1. Install Arduino IDE
-
-Download from [arduino.cc](https://www.arduino.cc/en/software).
-
-### 2. Add ESP32-S3 Board Support
-
-1. Go to **File → Preferences**
-2. In "Additional Board Manager URLs" add: `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
-3. Go to **Tools → Board → Board Manager**, search `esp32`, and install
+1. Download [Arduino IDE](https://www.arduino.cc/en/software)
+2. Go to **File → Preferences** and add to Additional Board Manager URLs:
+   ```
+   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+   ```
+3. Go to **Tools → Board → Board Manager**, search `esp32`, install
 4. Select board: **XIAO_ESP32S3**
+5. Install libraries via **Sketch → Include Library → Manage Libraries**:
+   - `Adafruit ICM20X`
+   - `Adafruit BusIO`
+   - `Adafruit Unified Sensor`
 
-### 3. Install Libraries
+### 2. Python setup
 
-In **Sketch → Include Library → Manage Libraries**, install:
-
-- `Adafruit ICM20X`
-- `Adafruit BusIO`
-- `Adafruit Unified Sensor`
-
-### 4. Upload and Run
-
-1. Connect the XIAO ESP32-S3 via USB-C
-2. Select the correct port under **Tools → Port**
-3. Upload the sketch
-4. Open **Serial Monitor** at **115200 baud**
-
-## Expected Output
-
-```
-Accel X: 2.380 Y: 4.705 Z: -8.198 m/s²
-Gyro  X: 0.090 Y: -0.038 Z: -0.036 rad/s
-Mag   X: -1.200 Y: 17.850 Z: -61.950 uT
-Temp: 28.1 °C
-Flex  Raw: 0  Voltage: 0.000 V
+```bash
+pip install pyserial pandas numpy scipy scikit-learn matplotlib joblib streamlit
 ```
 
-### Flex Sensor Values (Bicep Curl)
+---
 
-| Position         | Raw Value | Voltage |
-|------------------|-----------|---------|
-| Fully extended   | ~0        | ~0.0 V  |
-| Mid-curl         | ~1300–2800| ~1.0–2.3 V |
-| Fully curled     | ~3400–3650| ~2.7–2.9 V |
+## Step 1 — Upload Arduino firmware
+
+Open `arduino_sketch/imu_stream.ino` in Arduino IDE and upload to the XIAO ESP32-S3. The sketch streams CSV-formatted IMU data over serial at 20Hz (50ms per sample).
+
+To verify it is working, open **Serial Monitor** at **115200 baud**. You should see:
+
+```
+timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z,temp_c
+85098,0.611,4.223,9.041,0.119,-0.039,0.066,-6.75,27.90,7.05,30.5
+...
+```
+
+The sketch stays on the device permanently — you only need to re-upload if you change the code.
+
+---
+
+## Step 2 — Record training data
+
+> Close Serial Monitor before running any Python script — only one program can use the COM port at a time.
+
+Open `capture.py` and set the filename and port:
+
+```python
+PORT = "COM13"           # Change to your port (check Arduino IDE → Tools → Port)
+FILENAME = "v2_bicep_curl_ColeGood_form1.csv"
+DURATION_SEC = 180       # 3 minutes per session
+```
+
+Then run:
+
+```bash
+cd C:\Users\YourName\Documents\workout-armband
+python capture.py
+```
+
+When prompted, start performing reps. The script saves a CSV to your folder automatically.
+
+### Naming convention
+
+Use descriptive filenames so sessions are easy to sort:
+
+- `v2_bicep_curl_ColeGood_form1.csv` — good form session
+- `v2_bicep_curl_ColeBad_form1.csv` — bad form session
+
+### Folder setup
+
+After recording, organize your CSVs:
+
+```
+data/
+├── good/    ← all good form CSVs
+└── bad/     ← all bad form CSVs (sloppy curls, shoulder raises, fast reps, etc.)
+```
+
+Aim for a roughly balanced dataset — currently 26 good / 29 bad sessions.
+
+---
+
+## Step 3 — Train the model
+
+```bash
+python train_rep_classifier.py
+```
+
+This will:
+
+1. Load and trim all CSVs (skips first 5s and last 2s of each session)
+2. Show a rep detection chart — verify the red markers are landing correctly on peaks, then close the window to continue
+3. Detect individual reps using accelerometer peak detection
+4. Extract 75 features per rep
+5. Train a Random Forest classifier (200 trees)
+6. Print accuracy and confusion matrix
+7. Save `rep_classifier.pkl` and `rep_results.png`
+
+Expected output:
+
+```
+Found 26 files in data/good/
+Found 29 files in data/bad/
+Total rows after trimming: 135,715
+
+Per-rep accuracy: 99.8%
+
+Confusion matrix:
+                 Predicted Good   Predicted Bad
+Actual Good           241                1
+Actual Bad              0              243
+
+Model saved to rep_classifier.pkl
+```
+
+### Key config values (top of script)
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| `TRIM_START_SECONDS` | 5 | Skips setup noise at start of session |
+| `TRIM_END_SECONDS` | 2 | Skips wind-down at end |
+| `SAMPLE_RATE` | 20 | Must match Arduino sketch delay (50ms) |
+| `MIN_REP_TIME` | 1.0s | Minimum time between detected rep peaks |
+| `prominence` | 0.3 | Peak detection sensitivity — lower = more sensitive |
+
+---
+
+## Step 4 — Run live prediction and dashboard
+
+You need two terminals open at the same time.
+
+### Terminal 1 — prediction backend
+
+```bash
+cd C:\Users\YourName\Documents\workout-armband
+python live_rep_predict_dashboard.py
+```
+
+This reads live serial data, detects completed reps, classifies each one, and writes results to `session_log.json`.
+
+### Terminal 2 — Streamlit dashboard
+
+```bash
+cd C:\Users\YourName\Documents\workout-armband
+streamlit run dashboard.py
+```
+
+Streamlit opens a browser tab automatically at `http://localhost:8501`.
+
+### Terminal 1 output
+
+```
+Rep # 1  ✓ GOOD FORM  (94% confidence, 2.5s)
+Rep # 2  ✓ GOOD FORM  (97% confidence, 2.3s)
+Rep # 3  ✗ BAD FORM   (88% confidence, 1.1s)
+```
+
+### Dashboard display
+
+- Total reps, good reps, bad reps — live counters
+- Last rep result — large green checkmark or red X with confidence and duration
+- Form score bar — green above 70%, yellow 50–70%, red below 50%
+- Rep duration chart plotted over the session
+- Rep history table with most recent reps first
+- Session start time and live status indicator
+
+Press **Ctrl+C** in Terminal 1 to stop the session. A summary prints to the terminal and the dashboard stops refreshing.
+
+---
+
+## Improving the model
+
+To retrain with new data from additional users:
+
+1. Record new sessions using `capture.py` with a clearly named file
+2. Move CSVs into `data/good/` or `data/bad/`
+3. Re-run `python train_rep_classifier.py`
+4. The new `rep_classifier.pkl` overwrites the old one automatically
+
+Adding data from multiple users significantly improves generalization since the model currently trains on one person's motion patterns.
+
+---
 
 ## Troubleshooting
 
-- **"Failed to find ICM20948 chip!"** — Check I2C wiring (SDA to D4, SCL to D5). Make sure VIN and GND are connected.
-- **Flex sensor reads 0 constantly** — Check that the flex sensor, 47kΩ resistor, and D0 wire all share the same breadboard row at the junction.
-- **Flex sensor reads ~4095 constantly** — The 47kΩ resistor is not connected to GND. Verify the resistor's second leg goes to a row wired to the XIAO's GND pin.
-- **Garbled text in Serial Monitor** — Make sure baud rate is set to 115200 in the Serial Monitor dropdown.
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `Access is denied` on COM port | Serial Monitor is open | Close Serial Monitor in Arduino IDE |
+| `A device attached is not functioning` | USB connection issue | Unplug and replug cable, try different USB port |
+| `No objects to concatenate` | CSV folders empty or wrong path | Check `data/good/` and `data/bad/` have CSV files |
+| `KeyError: accel_x` | Column name mismatch | Verify CSV headers match `SENSOR_COLS` in script |
+| `Failed to find ICM20948 chip!` | IMU wiring issue | Check SDA to D4, SCL to D5, VIN to 3V3, GND to GND |
+| Merged reps showing 5s+ duration | Prominence threshold too high | Lower `prominence` from 0.3 to 0.2 in both scripts |
+| Too many false rep detections | Prominence threshold too low | Raise `prominence` from 0.3 to 0.4 in both scripts |
+| Dashboard not updating | Backend not running | Make sure Terminal 1 is running before opening dashboard |
+| Saved 0 rows to CSV | Arduino not streaming or ERROR state | Open Serial Monitor to verify data is flowing, then close it |
+
+---
+
+## Model details
+
+- **Algorithm:** Random Forest — 200 decision trees (scikit-learn)
+- **Features:** 75 per rep — mean, std, min, max, range, median, skew, kurtosis across 9 IMU axes, plus rep duration, acceleration energy, and gyro smoothness
+- **Dataset:** 55 sessions (~3,000+ labeled reps), 26 good / 29 bad
+- **Test accuracy:** 99.8% on held-out test reps
+- **Rep detection:** Peak detection on accel_x signal with Savitzky-Golay smoothing
