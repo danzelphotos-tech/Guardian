@@ -91,7 +91,7 @@ Increment the number each session: `form1`, `form2`, `form3` and so on.
 ## Wearing the device
 
 - Strap the device to your **wrist** — not your elbow or forearm
-- The sensor should sit on the **top of your wrist** (same side as your knuckles)
+- The sensor should sit on the **bottom of your wrist** (opposite side as your knuckles)
 - It should be snug enough not to slide around during movement
 - Keep the USB cable connected to your laptop while recording
 
