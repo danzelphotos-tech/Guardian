@@ -2,12 +2,12 @@ import serial
 import time
 from datetime import datetime
 
-PORT = "COM13"
+PORT = "COM5"
 BAUD = 115200
-DURATION_SEC = 180
+DURATION_SEC = 70
 
 # Name your file based on what you're recording
-FILENAME = "v2_bicep_curl_ColeBad_form29.csv"
+FILENAME = "v2_bicep_curl_VeronikaGood_form2.csv"
 
 ser = serial.Serial(PORT, BAUD, timeout=1)
 time.sleep(2)  # Wait for ESP32 to reset
