@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Guardian — Veronika's LED Feedback Sandbox</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0f1419;
+  --surface: #1a2332;
+  --border: #2d3a4d;
+  --text: #e8edf4;
+  --muted: #8b9cb3;
+  --accent: #3d9cf0;
+  --good: #34c759;
+  --warn: #ff9f0a;
+  --bad: #ff453a;
+  --yellow: #ffd60a;
+  --font: "DM Sans", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
+header { margin-bottom: 1.75rem; border-bottom: 1px solid var(--border); padding-bottom: 1.25rem; }
+header h1 { font-size: 1.35rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 0.25rem; }
+header p { color: var(--muted); font-size: 0.9rem; }
+.badge { display: inline-block; margin-top: 0.5rem; padding: 0.2rem 0.6rem; border-radius: 6px; font-size: 0.75rem; font-family: var(--mono); background: #1f3a5f; color: var(--accent); border: 1px solid #2d5080; }
+.grid { display: grid; gap: 1rem; }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+.section-gap { margin-top: 1rem; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem 1.25rem; }
+.panel h2 { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.85rem; }
+.upload-zone { border: 2px dashed var(--border); border-radius: 10px; padding: 2rem; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+.upload-zone:hover { border-color: var(--accent); background: #15202f; }
+.upload-zone.loaded { border-color: var(--good); border-style: solid; }
+.upload-zone p { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
+#fileInput { display: none; }
+.pool-status { display: flex; gap: 1rem; margin-top: 0.75rem; flex-wrap: wrap; }
+.pool-pill { padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.75rem; font-family: var(--mono); }
+.pool-pill.good { background: #1a3d26; color: var(--good); border: 1px solid #2a5e38; }
+.pool-pill.bad  { background: #3d1a1a; color: var(--bad);  border: 1px solid #5e2a2a; }
+.pool-pill.warn { background: #3d2d0a; color: var(--warn); border: 1px solid #5e4a1a; }
+.controls { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center; }
+button { font-family: inherit; font-size: 0.9rem; font-weight: 500; padding: 0.55rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+button:hover:not(:disabled) { background: #243044; border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+button.connected { background: #1a3d26; border-color: var(--good); color: var(--good); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.serial-status { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; font-family: var(--mono); margin-left: 0.5rem; }
+.serial-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+.serial-status.connected .dot { background: var(--good); }
+.metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem; }
+.metric { background: var(--bg); border-radius: 8px; padding: 0.75rem 0.9rem; border: 1px solid var(--border); }
+.metric .val { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.metric .lbl { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 0.2rem; }
+.metric.good .val { color: var(--good); }
+.metric.bad  .val { color: var(--bad);  }
+.metric.accent .val { color: var(--accent); }
+.led-panel { display: flex; flex-direction: column; align-items: center; gap: 1.25rem; padding: 1rem; }
+.led-bulb { width: 80px; height: 80px; border-radius: 50%; background: #1c1c1e; border: 3px solid #2c2c2e; transition: background 0.08s, box-shadow 0.08s, border-color 0.08s; }
+.led-bulb.on-yellow { background: var(--yellow); border-color: #c8a800; box-shadow: 0 0 20px 8px rgba(255,214,10,0.4); }
+.led-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.led-status { text-align: center; min-height: 3.5rem; }
+.led-status .result-text { font-size: 1.1rem; font-weight: 600; }
+.led-status .sub-text { font-size: 0.78rem; color: var(--muted); margin-top: 0.2rem; font-family: var(--mono); }
+.led-status.good .result-text { color: var(--good); }
+.led-status.bad  .result-text { color: var(--bad);  }
+.led-status.idle .result-text { color: var(--muted); }
+.chart-box { position: relative; height: 180px; margin-top: 0.5rem; }
+.chart-box-tall { position: relative; height: 240px; margin-top: 0.5rem; }
+.blink-log { width: 100%; max-height: 200px; overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.75rem; font-family: var(--mono); font-size: 0.72rem; }
+.blink-log .entry { padding: 0.2rem 0; border-bottom: 1px solid #1e2a38; }
+.blink-log .entry:last-child { border-bottom: none; }
+.blink-log .entry.good { color: var(--good); }
+.blink-log .entry.bad  { color: var(--bad);  }
+.blink-log .entry.info { color: var(--muted); }
+.timing-grid { display: grid; gap: 0.6rem; margin-top: 0.5rem; }
+.timing-row { display: flex; align-items: center; gap: 0.75rem; font-size: 0.8rem; color: var(--muted); }
+.timing-row label { min-width: 130px; }
+.timing-row input[type=range] { flex: 1; accent-color: var(--accent); }
+.timing-row .val-out { font-family: var(--mono); font-size: 0.75rem; min-width: 50px; text-align: right; color: var(--text); }
+.arduino-hint { background: #0d1f0f; border: 1px solid #1e4020; border-radius: 8px; padding: 0.85rem 1rem; font-family: var(--mono); font-size: 0.72rem; color: #5dba60; white-space: pre; overflow-x: auto; margin-top: 0.75rem; }
+.playback-bar { width: 100%; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 0.5rem; }
+.playback-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 3px; transition: width 0.05s linear; }
+.hint-box { background: #1a2a1a; border: 1px solid #2a4a2a; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.8rem; color: var(--muted); margin-top: 0.75rem; line-height: 1.6; }
+.hint-box strong { color: var(--good); }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Guardian — LED Feedback Sandbox</h1>
+    <p>Connect your ESP32, load your CSVs, press the physical button — dashboard and LED fire together.</p>
+    <span class="badge">capture_veronika / simulation-dashboard-veronika.html</span>
+  </header>
+
+  <!-- Step 1: Serial connection -->
+  <div class="panel">
+    <h2>Step 1 — Connect to ESP32</h2>
+    <div class="controls">
+      <button class="primary" id="btnConnect">Connect to ESP32</button>
+      <button id="btnDisconnect" disabled>Disconnect</button>
+      <div class="serial-status" id="serialStatus">
+        <span class="dot"></span>
+        <span id="serialStatusText">Not connected</span>
+      </div>
+    </div>
+    <div class="hint-box">
+      <strong>Before connecting:</strong> Close Serial Monitor in Arduino IDE — only one program can use COM4 at a time.<br/>
+      Click Connect → pick <strong>COM4</strong> from the popup → done.
+    </div>
+  </div>
+
+  <!-- Step 2: Load CSVs -->
+  <div class="panel section-gap">
+    <h2>Step 2 — Load your CSV files</h2>
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+      <div style="font-size:2rem">📂</div>
+      <strong>Click to select all your CSV files</strong>
+      <p>Select all files from capture_veronika_first_round/ and capture_veronika_5_14_26/ at once.<br/>
+         Dashboard auto-sorts into Good and Bad pools by filename.</p>
+    </div>
+    <input type="file" id="fileInput" accept=".csv" multiple />
+    <div class="pool-status" id="poolStatus" style="display:none">
+      <span class="pool-pill good" id="pillGood">Good: 0 files</span>
+      <span class="pool-pill bad"  id="pillBad">Bad: 0 files</span>
+      <span class="pool-pill warn" id="pillSkip" style="display:none"></span>
+    </div>
+  </div>
+
+  <!-- Step 3: Controls + stats -->
+  <div class="grid grid-2 section-gap">
+    <div class="panel">
+      <h2>Step 3 — Press button or simulate</h2>
+      <div class="controls">
+        <button class="primary" id="btnOneRep"  disabled>Simulate 1 rep (no ESP32)</button>
+        <button class="primary" id="btnSession" disabled>Run 10-rep session</button>
+        <button id="btnReset">Reset</button>
+      </div>
+      <p style="margin-top:0.75rem; font-size:0.8rem; color:var(--muted)">
+        With ESP32 connected: press the physical button on D2.<br/>
+        Without ESP32: use the simulate buttons above.
+      </p>
+      <div class="playback-bar section-gap"><div class="playback-fill" id="playbackFill"></div></div>
+      <p style="margin-top:0.35rem; font-size:0.72rem; color:var(--muted); font-family:var(--mono)" id="playbackLabel">—</p>
+    </div>
+    <div class="panel">
+      <h2>Session Stats</h2>
+      <div class="metrics">
+        <div class="metric accent"><div class="val" id="vTotal">0</div><div class="lbl">Total reps</div></div>
+        <div class="metric good" ><div class="val" id="vGood">0</div><div class="lbl">Good reps</div></div>
+        <div class="metric bad"  ><div class="val" id="vBad">0</div><div class="lbl">Bad reps</div></div>
+        <div class="metric"      ><div class="val" id="vFile">—</div><div class="lbl">Last file used</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LED + accel -->
+  <div class="grid grid-2 section-gap">
+    <div class="panel">
+      <h2>LED Simulator — D0 (Yellow)</h2>
+      <div class="led-panel">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem">
+          <div class="led-bulb" id="ledBulb"></div>
+          <span class="led-label">GPIO D0</span>
+        </div>
+        <div class="led-status idle" id="ledStatus">
+          <div class="result-text" id="ledResultText">Waiting for rep…</div>
+          <div class="sub-text"    id="ledSubText"></div>
+        </div>
+        <div class="blink-log" id="blinkLog">
+          <div class="entry info">— rep log will appear here —</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Accel X — Rep Playback (real data)</h2>
+      <div class="chart-box"><canvas id="chartAccel"></canvas></div>
+      <p style="margin-top:0.5rem; font-size:0.72rem; color:var(--muted); font-family:var(--mono)" id="accelInfo">—</p>
+    </div>
+  </div>
+
+  <!-- Form chart + timing -->
+  <div class="grid grid-2 section-gap">
+    <div class="panel">
+      <h2>Form Result — All Reps</h2>
+      <div class="chart-box-tall"><canvas id="chartForm"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>Blink Timing — tune here, copy to Arduino</h2>
+      <div class="timing-grid">
+        <div class="timing-row">
+          <label>Blink ON (ms)</label>
+          <input type="range" id="sliderOn"    min="50"  max="500"  step="10"  value="200" />
+          <span class="val-out" id="outOn">200 ms</span>
+        </div>
+        <div class="timing-row">
+          <label>Blink OFF gap (ms)</label>
+          <input type="range" id="sliderOff"   min="50"  max="500"  step="10"  value="150" />
+          <span class="val-out" id="outOff">150 ms</span>
+        </div>
+        <div class="timing-row">
+          <label>Post-rep pause (ms)</label>
+          <input type="range" id="sliderPause" min="200" max="2000" step="100" value="800" />
+          <span class="val-out" id="outPause">800 ms</span>
+        </div>
+        <div class="timing-row">
+          <label>Playback speed</label>
+          <input type="range" id="sliderSpeed" min="1"   max="20"   step="1"   value="5" />
+          <span class="val-out" id="outSpeed">5x</span>
+        </div>
+      </div>
+      <p style="margin-top:0.85rem; font-size:0.75rem; color:var(--muted)">
+        Copy these values into <code style="color:var(--accent)">led_feedback.ino</code>:
+      </p>
+      <div class="arduino-hint" id="arduinoHint">const int BLINK_ON    = 200;  // ms
+const int BLINK_OFF   = 150;  // ms between double-blink
+const int POST_PAUSE  = 800;  // ms after pattern ends</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+
+  // ── State ──
+  let goodPool = [], badPool = [];
+  let totalCount = 0, goodCount = 0, badCount = 0;
+  let allResults = [];
+  let running = false, ledBusy = false;
+  let chartAccel = null, chartForm = null;
+  let serialPort = null, serialWriter = null, serialReader = null;
+  let serialConnected = false;
+
+  const $ = id => document.getElementById(id);
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  const getOn    = () => parseInt($("sliderOn").value,    10);
+  const getOff   = () => parseInt($("sliderOff").value,   10);
+  const getPause = () => parseInt($("sliderPause").value, 10);
+  const getSpeed = () => parseInt($("sliderSpeed").value, 10);
+
+  // ── Timing sliders ──
+  function updateArduinoHint() {
+    $("arduinoHint").textContent =
+      "const int BLINK_ON    = " + getOn()    + ";  // ms\n" +
+      "const int BLINK_OFF   = " + getOff()   + ";  // ms between double-blink\n" +
+      "const int POST_PAUSE  = " + getPause() + ";  // ms after pattern ends";
+  }
+  ["sliderOn","sliderOff","sliderPause","sliderSpeed"].forEach(id => {
+    $(id).addEventListener("input", () => {
+      $("outOn").textContent    = getOn()    + " ms";
+      $("outOff").textContent   = getOff()   + " ms";
+      $("outPause").textContent = getPause() + " ms";
+      $("outSpeed").textContent = getSpeed() + "x";
+      updateArduinoHint();
+    });
+  });
+
+  // ── Web Serial ──
+  function setSerialStatus(connected, text) {
+    serialConnected = connected;
+    const el = $("serialStatus");
+    el.classList.toggle("connected", connected);
+    $("serialStatusText").textContent = text;
+    $("btnConnect").classList.toggle("connected", connected);
+    $("btnConnect").textContent = connected ? "Connected to ESP32" : "Connect to ESP32";
+    $("btnDisconnect").disabled = !connected;
+  }
+
+  async function sendToESP32(msg) {
+    if (!serialWriter) return;
+    const encoder = new TextEncoder();
+    await serialWriter.write(encoder.encode(msg + "\n"));
+  }
+
+  async function readSerialLoop() {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (serialPort && serialPort.readable) {
+        serialReader = serialPort.readable.getReader();
+        try {
+          while (true) {
+            const { value, done } = await serialReader.read();
+            if (done) break;
+            buffer += decoder.decode(value);
+            const lines = buffer.split("\n");
+            buffer = lines.pop();
+            for (const line of lines) {
+              const msg = line.trim();
+              if (msg === "REP") {
+                handleRepTriggered();
+              }
+            }
+          }
+        } finally {
+          serialReader.releaseLock();
+          serialReader = null;
+        }
+      }
+    } catch (e) {
+      console.log("Serial read ended:", e);
+    }
+  }
+
+  $("btnConnect").addEventListener("click", async () => {
+    if (!("serial" in navigator)) {
+      alert("Web Serial not supported. Use Edge or Chrome.");
+      return;
+    }
+    try {
+      serialPort = await navigator.serial.requestPort();
+      await serialPort.open({ baudRate: 115200 });
+      const info = serialPort.getInfo();
+      setSerialStatus(true, "Connected — COM port active");
+      const writable = serialPort.writable;
+      serialWriter = writable.getWriter();
+      readSerialLoop();
+    } catch (e) {
+      console.error("Serial connect failed:", e);
+      setSerialStatus(false, "Connection failed — " + e.message);
+    }
+  });
+
+  $("btnDisconnect").addEventListener("click", async () => {
+    try {
+      if (serialReader) { await serialReader.cancel(); serialReader = null; }
+      if (serialWriter) { await serialWriter.close(); serialWriter = null; }
+      if (serialPort)   { await serialPort.close();   serialPort   = null; }
+    } catch(e) { console.log("Disconnect:", e); }
+    setSerialStatus(false, "Not connected");
+  });
+
+  // ── CSV parsing ──
+  function parseCSV(text) {
+    const lines = text.trim().split("\n");
+    if (lines.length < 2) return [];
+    const header = lines[0].split(",").map(h => h.trim());
+    const idx = header.findIndex(h => h === "accel_x_ms2" || h === "accel_x");
+    if (idx === -1) return [];
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const val = parseFloat(lines[i].split(",")[idx]);
+      if (!isNaN(val)) rows.push(val);
+    }
+    return rows;
+  }
+
+  function labelFromFilename(name) {
+    if (name.includes("Good")) return "good";
+    if (name.includes("Bad"))  return "bad";
+    return "unknown";
+  }
+
+  $("fileInput").addEventListener("change", async (e) => {
+    const files = Array.from(e.target.files);
+    goodPool = []; badPool = [];
+    let skipped = 0;
+    for (const file of files) {
+      const rows  = parseCSV(await file.text());
+      const label = labelFromFilename(file.name);
+      if (rows.length < 20 || label === "unknown") { skipped++; continue; }
+      (label === "good" ? goodPool : badPool).push({ filename: file.name, rows });
+    }
+    $("pillGood").textContent = "Good: " + goodPool.length + " files";
+    $("pillBad").textContent  = "Bad: "  + badPool.length  + " files";
+    $("poolStatus").style.display = "flex";
+    if (skipped > 0) { $("pillSkip").textContent = "Skipped: " + skipped; $("pillSkip").style.display = "inline-block"; }
+    const ready = goodPool.length > 0 && badPool.length > 0;
+    $("uploadZone").classList.toggle("loaded", ready);
+    $("btnOneRep").disabled  = !ready;
+    $("btnSession").disabled = !ready;
+  });
+
+  // ── Rep extraction ──
+  function extractRep(pool) {
+    const entry = pool[Math.floor(Math.random() * pool.length)];
+    const rows  = entry.rows;
+    const WIN   = 40;
+    let bestIdx = WIN, bestVal = -Infinity;
+    for (let i = WIN; i < rows.length - WIN; i++) {
+      if (rows[i] > bestVal) { bestVal = rows[i]; bestIdx = i; }
+    }
+    const start  = Math.max(0, bestIdx - WIN);
+    const end    = Math.min(rows.length - 1, bestIdx + Math.floor(WIN / 2));
+    const window = rows.slice(start, end + 1);
+    return { filename: entry.filename, window, peak: Math.max(...window) };
+  }
+
+  // ── LED sim ──
+  async function blinkSimOnce() {
+    $("ledBulb").classList.add("on-yellow");
+    await delay(getOn());
+    $("ledBulb").classList.remove("on-yellow");
+  }
+
+  async function blinkSimTwice() {
+    await blinkSimOnce();
+    await delay(getOff());
+    await blinkSimOnce();
+  }
+
+  // ── Charts ──
+  function drawAccelChart(data, label) {
+    if (chartAccel) chartAccel.destroy();
+    chartAccel = new Chart($("chartAccel"), {
+      type: "line",
+      data: {
+        labels: data.map((_, i) => i),
+        datasets: [{ data, borderColor: label === "good" ? "#34c759" : "#ff453a", backgroundColor: label === "good" ? "rgba(52,199,89,0.1)" : "rgba(255,69,58,0.1)", fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#8b9cb3" }, grid: { color: "rgba(45,58,77,0.5)" } },
+          y: { ticks: { color: "#8b9cb3" }, grid: { color: "rgba(45,58,77,0.5)" }, title: { display: true, text: "accel_x (m/s²)", color: "#8b9cb3" } }
+        }
+      }
+    });
+  }
+
+  function updateFormChart() {
+    const colors = allResults.map(r => r.isGood ? "#34c759" : "#ff453a");
+    if (chartForm) chartForm.destroy();
+    chartForm = new Chart($("chartForm"), {
+      type: "bar",
+      data: {
+        labels: allResults.map((_, i) => "Rep " + (i + 1)),
+        datasets: [{ data: allResults.map(() => 1), backgroundColor: colors.map(c => c + "bb"), borderColor: colors, borderWidth: 1, borderRadius: 4 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => allResults[ctx.dataIndex].isGood ? "Good form" : "Bad form" } } },
+        scales: { x: { ticks: { color: "#8b9cb3" }, grid: { color: "rgba(45,58,77,0.5)" } }, y: { display: false, min: 0, max: 1.2 } }
+      }
+    });
+  }
+
+  // ── Log ──
+  function logEntry(isGood, repNum, filename) {
+    const log = $("blinkLog");
+    if (log.querySelector(".entry.info")) log.innerHTML = "";
+    const div = document.createElement("div");
+    div.className = "entry " + (isGood ? "good" : "bad");
+    const short = filename.replace("v2_bicep_curl_Veronika","").replace(".csv","");
+    div.textContent = "Rep #" + repNum + "  " + (isGood ? "GOOD  1 blink" : "BAD   2 blinks") + "  [" + short + "]";
+    log.prepend(div);
+  }
+
+  // ── Core rep handler ──
+  async function simulateRep(isGoodOverride) {
+    if (ledBusy || goodPool.length === 0 || badPool.length === 0) return;
+    ledBusy = true;
+
+    const isGood = (isGoodOverride !== undefined) ? isGoodOverride : (Math.random() < 0.5);
+    const { filename, window, peak } = extractRep(isGood ? goodPool : badPool);
+    const repNum = ++totalCount;
+    if (isGood) goodCount++; else badCount++;
+    allResults.push({ isGood, filename });
+
+    $("vTotal").textContent = totalCount;
+    $("vGood").textContent  = goodCount;
+    $("vBad").textContent   = badCount;
+    $("vFile").textContent  = filename.replace("v2_bicep_curl_Veronika","").replace(".csv","");
+    $("playbackLabel").textContent = "Playing: " + filename;
+    $("accelInfo").textContent = window.length + " samples | peak accel_x = " + peak.toFixed(3) + " m/s2";
+
+    // ── FIRE result + send to ESP32 immediately (before animation) ──
+    $("ledResultText").textContent = isGood ? "Good form" : "Bad form";
+    $("ledSubText").textContent    = isGood ? "1 blink  D0" : "2 blinks  D0";
+    $("ledStatus").className = "led-status " + (isGood ? "good" : "bad");
+
+    // Send to ESP32 and start LED sim simultaneously
+    const espSend = sendToESP32(isGood ? "GOOD" : "BAD");
+    const ledAnim = isGood ? blinkSimOnce() : blinkSimTwice();
+    await Promise.all([espSend, ledAnim]);
+
+    logEntry(isGood, repNum, filename);
+    updateFormChart();
+
+    // ── Chart animation plays AFTER feedback fires ──
+    const streamStep = Math.max(10, Math.round(50 / getSpeed()));
+    for (let i = 0; i <= window.length; i++) {
+      $("playbackFill").style.width = ((i / window.length) * 100) + "%";
+      if (i % 5 === 0) drawAccelChart(window.slice(0, Math.max(i, 1)), isGood ? "good" : "bad");
+      await delay(streamStep);
+    }
+    drawAccelChart(window, isGood ? "good" : "bad");
+    $("playbackFill").style.width = "0%";
+
+    await delay(getPause());
+    $("ledStatus").className = "led-status idle";
+    $("ledResultText").textContent = "Waiting for next rep…";
+    $("ledSubText").textContent    = "";
+    $("playbackLabel").textContent = "—";
+    ledBusy = false;
+  }
+
+  // Called when ESP32 sends "REP" via button press
+  function handleRepTriggered() {
+    if (!ledBusy && goodPool.length > 0 && badPool.length > 0) {
+      simulateRep();
+    }
+  }
+
+  // ── Button handlers ──
+  $("btnOneRep").addEventListener("click",  () => { if (!ledBusy && !running) simulateRep(); });
+
+  $("btnSession").addEventListener("click", async () => {
+    if (running || ledBusy) return;
+    running = true;
+    $("btnSession").disabled = true;
+    $("btnOneRep").disabled  = true;
+    for (let i = 0; i < 10; i++) { await simulateRep(); await delay(200); }
+    running = false;
+    $("btnSession").disabled = false;
+    $("btnOneRep").disabled  = false;
+  });
+
+  $("btnReset").addEventListener("click", () => {
+    if (running || ledBusy) return;
+    totalCount = 0; goodCount = 0; badCount = 0; allResults = [];
+    $("vTotal").textContent = "0"; $("vGood").textContent = "0"; $("vBad").textContent = "0"; $("vFile").textContent = "—";
+    $("blinkLog").innerHTML = '<div class="entry info">— rep log will appear here —</div>';
+    $("ledBulb").className  = "led-bulb";
+    $("ledStatus").className = "led-status idle";
+    $("ledResultText").textContent = "Waiting for rep…";
+    $("ledSubText").textContent    = "";
+    $("playbackFill").style.width  = "0%";
+    $("playbackLabel").textContent = "—";
+    $("accelInfo").textContent     = "—";
+    if (chartAccel) { chartAccel.destroy(); chartAccel = null; }
+    if (chartForm)  { chartForm.destroy();  chartForm  = null; }
+  });
+
+})();
+</script>
+</body>
+</html>
