@@ -1,0 +1,60 @@
+// --- Library Includes ---
+#include <Adafruit_ICM20X.h>      // Base library for ICM20X series IMUs
+#include <Adafruit_ICM20948.h>    // Specific library for the ICM20948 9-DoF IMU
+#include <Adafruit_Sensor.h>      // Unified sensor interface
+#include <Wire.h>                 // I2C communication protocol library
+
+// Create an ICM20948 sensor object
+Adafruit_ICM20948 icm;
+
+// Track time since program started (milliseconds)
+unsigned long startTime;
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial) delay(10);
+
+  // Initialize I2C — GPIO5 = SDA (data), GPIO6 = SCL (clock)
+  Wire.begin(5, 6);
+
+  // Try to connect to the ICM20948 over I2C. Halt if it fails
+  if (!icm.begin_I2C()) {
+    Serial.println("ERROR: Failed to find ICM20948 chip!");
+    while (1) delay(10);
+  }
+
+  // Configure sensor ranges
+  icm.setAccelRange(ICM20948_ACCEL_RANGE_4_G);      // Accelerometer: ±4g
+  icm.setGyroRange(ICM20948_GYRO_RANGE_500_DPS);    // Gyroscope: ±500 degrees/sec
+  icm.setMagDataRate(AK09916_MAG_DATARATE_10_HZ);   // Magnetometer: 10 readings/sec
+
+  // Print CSV header row — becomes the first line of your file
+  Serial.println("timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z,temp_c");
+
+  startTime = millis();
+}
+
+void loop() {
+  // Create event structs to hold latest readings
+  sensors_event_t accel, gyro, mag, temp;
+
+  // Pull fresh data from all sensors in one call
+  icm.getEvent(&accel, &gyro, &temp, &mag);
+
+  // Print one CSV row per reading — comma separated
+  unsigned long elapsed = millis() - startTime;
+  Serial.print(elapsed);                Serial.print(",");
+  Serial.print(accel.acceleration.x, 3); Serial.print(",");
+  Serial.print(accel.acceleration.y, 3); Serial.print(",");
+  Serial.print(accel.acceleration.z, 3); Serial.print(",");
+  Serial.print(gyro.gyro.x, 3);          Serial.print(",");
+  Serial.print(gyro.gyro.y, 3);          Serial.print(",");
+  Serial.print(gyro.gyro.z, 3);          Serial.print(",");
+  Serial.print(mag.magnetic.x, 3);       Serial.print(",");
+  Serial.print(mag.magnetic.y, 3);       Serial.print(",");
+  Serial.print(mag.magnetic.z, 3);       Serial.print(",");
+  Serial.println(temp.temperature, 1);
+
+  // 50ms = 20 readings per second
+  delay(50);
+}

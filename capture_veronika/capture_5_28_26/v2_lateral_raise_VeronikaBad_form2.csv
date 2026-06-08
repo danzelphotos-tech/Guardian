@@ -1,0 +1,1 @@
+timestamp,elapsed_ms,accel_x_ms2,accel_y_ms2,accel_z_ms2,gyro_x_rads,gyro_y_rads,gyro_z_rads,mag_x_uT,mag_y_uT,mag_z_uT,temp_c,

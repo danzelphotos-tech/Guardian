@@ -1,0 +1,48 @@
+#include <Adafruit_ICM20X.h>
+#include <Adafruit_ICM20948.h>
+#include <Adafruit_Sensor.h>
+#include <Wire.h>
+
+Adafruit_ICM20948 icm;
+
+unsigned long startTime;
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial) delay(10);
+
+  Wire.begin(5, 6);
+
+  if (!icm.begin_I2C()) {
+    Serial.println("ERROR: Failed to find ICM20948 chip!");
+    while (1) delay(10);
+  }
+
+  icm.setAccelRange(ICM20948_ACCEL_RANGE_4_G);
+  icm.setGyroRange(ICM20948_GYRO_RANGE_500_DPS);
+  icm.setMagDataRate(AK09916_MAG_DATARATE_10_HZ);
+
+  Serial.println("timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z,temp_c");
+
+  startTime = millis();
+}
+
+void loop() {
+  sensors_event_t accel, gyro, mag, temp;
+  icm.getEvent(&accel, &gyro, &temp, &mag);
+
+  unsigned long elapsed = millis() - startTime;
+  Serial.print(elapsed);                Serial.print(",");
+  Serial.print(accel.acceleration.x, 3); Serial.print(",");
+  Serial.print(accel.acceleration.y, 3); Serial.print(",");
+  Serial.print(accel.acceleration.z, 3); Serial.print(",");
+  Serial.print(gyro.gyro.x, 3);          Serial.print(",");
+  Serial.print(gyro.gyro.y, 3);          Serial.print(",");
+  Serial.print(gyro.gyro.z, 3);          Serial.print(",");
+  Serial.print(mag.magnetic.x, 3);       Serial.print(",");
+  Serial.print(mag.magnetic.y, 3);       Serial.print(",");
+  Serial.print(mag.magnetic.z, 3);       Serial.print(",");
+  Serial.println(temp.temperature, 1);
+
+  delay(50);
+}
