@@ -6,10 +6,10 @@ Built for TECHIN515 at the Global Innovation Exchange (GIX) / University of Wash
 
 ## Team
 
-- **January (Coleman)** — ML Pipeline, HW/SW Integration
-- **Kitty** — Systems/Integration
-- **Veronika** — HW/SW
-- **Daniel** — Cloud/Dashboard
+- **Coleman** — ML Pipeline
+- **Kitty** — Systems/Integration/PCB/Enclosure
+- **Veronika** — HW/SW Integration/Datasets
+- **Daniel** — Enclosure/HW/ Datasets
 
 ---
 
