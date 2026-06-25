@@ -15,6 +15,7 @@ Built for TECHIN515 at the Global Innovation Exchange (GIX) / University of Wash
 
 <img width="3024" height="4032" alt="IMG_4101" src="https://github.com/user-attachments/assets/e1d20195-5a63-43d4-b246-106e80d4f8fa" />
 <img width="3024" height="4032" alt="IMG_4104" src="https://github.com/user-attachments/assets/3d42f55c-fd01-447a-9ef2-113c57689a84" />
+<img width="1285" height="903" alt="image" src="https://github.com/user-attachments/assets/a3c04bde-0ec8-4ff3-adf3-1b7e7ac20428" />
 
 
 
