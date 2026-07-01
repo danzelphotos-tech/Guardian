@@ -152,7 +152,7 @@ Loads all four models at startup for instant exercise switching via the dashboar
 - Summary metrics: total reps, good reps, bad reps, form score %
 - Last rep verdict with confidence and duration
 - Full rep history table with color-coded results
-- Rep duration bar chart
+- Rep duration + individual metric table
 
 Auto-refreshes every second.
 
